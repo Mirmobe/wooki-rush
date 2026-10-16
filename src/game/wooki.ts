@@ -2,7 +2,7 @@ import { previewPathPrefix } from "@/lib/preview-path-prefix";
 import { Disco } from "@/game/disco";
 
 export const WORLD_W = 960;
-const PLAYER_X = 236;
+const HOME_X = 236;
 const GRAVITY = 3600;
 const JUMP_V = 1140;
 const JUMP_CUT = 640;
@@ -172,6 +172,9 @@ export class WookiGame {
   reel = false;
   level = 1;
   lives = HITS;
+  playerX = HOME_X;
+  private moveLeft = false;
+  private moveRight = false;
   private levelMeters = 0;
   private iframes = 0;
   private gunCd = 0;
@@ -285,6 +288,22 @@ export class WookiGame {
     this.slideLock = false;
   }
 
+  pressLeft() {
+    this.moveLeft = true;
+  }
+
+  releaseLeft() {
+    this.moveLeft = false;
+  }
+
+  pressRight() {
+    this.moveRight = true;
+  }
+
+  releaseRight() {
+    this.moveRight = false;
+  }
+
   pressShoot() {
     this.audio.unlock();
     if (this.phase === "loading") return;
@@ -364,6 +383,9 @@ export class WookiGame {
     this.lastKind = null;
     this.lastX = 0;
     this.jumpHeld = false;
+    this.moveLeft = false;
+    this.moveRight = false;
+    this.playerX = HOME_X;
     this.player = this.freshPlayer();
     for (const a of this.pool) a.active = false;
     this.emit(true);
@@ -438,7 +460,7 @@ export class WookiGame {
       return;
     }
     const box = this.actorBox(next);
-    const dist = box.l - (PLAYER_X + 40);
+    const dist = box.l - (this.playerX + 40);
     const eta = dist / Math.max(160, rel);
 
     if (next.kind === "skunk") {
@@ -454,19 +476,19 @@ export class WookiGame {
         this.jumpHeld = true;
         if (grounded || p.coyote > 0) p.jumpBuf = Math.max(p.jumpBuf, JUMP_BUFFER);
       }
-      if (box.r < PLAYER_X - 36 || p.h > 128) this.jumpHeld = false;
+      if (box.r < this.playerX - 36 || p.h > 128) this.jumpHeld = false;
       if (eta < 0.55 && eta > 0.05) this.tryFire();
       return;
     }
 
     this.jumpHeld = false;
     if (eta < 0.5 && eta > 0.02) this.tryFire();
-    const close = box.r > PLAYER_X - 110 && box.l < PLAYER_X + rel * 0.2;
+    const close = box.r > this.playerX - 110 && box.l < this.playerX + rel * 0.2;
     if (close && p.state === "slide") p.slideT = Math.max(p.slideT, 0.34);
     if ((eta < 0.16 || close) && p.state !== "jump") {
       this.slideLock = true;
       if (p.state !== "slide") p.slideBuf = Math.max(p.slideBuf, SLIDE_BUFFER);
-    } else if (box.r < PLAYER_X - 120) {
+    } else if (box.r < this.playerX - 120) {
       this.slideLock = false;
     }
   }
@@ -562,6 +584,8 @@ export class WookiGame {
       p.vy = 0;
       return;
     }
+    const dir = (this.moveRight ? 1 : 0) - (this.moveLeft ? 1 : 0);
+    if (dir) this.playerX = Math.min(500, Math.max(78, this.playerX + dir * 340 * dt));
     if (p.state !== "slide") p.jumpBuf = Math.max(0, p.jumpBuf - dt);
     if (p.state !== "slide") p.slideBuf = Math.max(0, p.slideBuf - dt);
 
@@ -590,7 +614,7 @@ export class WookiGame {
         p.squash = 0.68;
         p.land = 1;
         this.audio.land();
-        this.burst(PLAYER_X - 8, 6, 8, "#f4ead8", -40);
+        this.burst(this.playerX - 8, 6, 8, "#f4ead8", -40);
         if (p.slideBuf > 0) this.beginSlide();
         else this.tryJump();
       }
@@ -610,7 +634,7 @@ export class WookiGame {
       this.dustAcc += dt;
       if (this.dustAcc > 0.2) {
         this.dustAcc = 0;
-        this.burst(PLAYER_X - 16, 4, 2, "#d6ff3c", -30);
+        this.burst(this.playerX - 16, 4, 2, "#d6ff3c", -30);
       }
     }
   }
@@ -628,7 +652,7 @@ export class WookiGame {
       p.stretch = 1.16;
       p.squash = 0.84;
       this.audio.jump();
-      this.burst(PLAYER_X, 8, 5, "#f4ead8", 20);
+      this.burst(this.playerX, 8, 5, "#f4ead8", 20);
     }
   }
 
@@ -641,7 +665,7 @@ export class WookiGame {
     p.vy = 0;
     p.squash = 0.6;
     this.audio.slide();
-    this.burst(PLAYER_X - 20, 6, 6, "#d6ff3c", -80);
+    this.burst(this.playerX - 20, 6, 6, "#d6ff3c", -80);
   }
 
   private spawn(dt: number, speed: number) {
@@ -741,10 +765,10 @@ export class WookiGame {
       const u = 1 - p.slideT / SLIDE_TIME;
       const low = u >= 0.16 && u <= 0.84;
       return low
-        ? { l: PLAYER_X - 52, r: PLAYER_X + 46, b: 0, t: 36 }
-        : { l: PLAYER_X - 36, r: PLAYER_X + 32, b: 0, t: 74 };
+        ? { l: this.playerX - 52, r: this.playerX + 46, b: 0, t: 36 }
+        : { l: this.playerX - 36, r: this.playerX + 32, b: 0, t: 74 };
     }
-    return { l: PLAYER_X - 18, r: PLAYER_X + 22, b: p.h + 10, t: p.h + 138 };
+    return { l: this.playerX - 18, r: this.playerX + 22, b: p.h + 10, t: p.h + 138 };
   }
 
   private dodge(a: Actor) {
@@ -755,9 +779,9 @@ export class WookiGame {
     const mult = 1 + (this.combo - 1) * 0.42;
     const gain = Math.round((near ? 150 : 75) * mult);
     this.score += gain;
-    this.popup(PLAYER_X + 70, 168, near ? "CLOSE" : `+${gain}`, near ? "#ff2e88" : "#d6ff3c");
+    this.popup(this.playerX + 70, 168, near ? "CLOSE" : `+${gain}`, near ? "#ff2e88" : "#d6ff3c");
     if (this.combo % 5 === 0) {
-      this.popup(PLAYER_X + 70, 210, `x${this.combo}`, "#f0a020");
+      this.popup(this.playerX + 70, 210, `x${this.combo}`, "#f0a020");
       this.audio.milestone();
       if (!this.reduced) this.trauma = Math.min(1, this.trauma + 0.28);
     } else {
@@ -787,12 +811,12 @@ export class WookiGame {
     this.trauma = this.reduced ? 0 : 0.62;
     a.flash = 1;
     const fur = a.kind === "wooki" ? "#c47a45" : "#f4ead8";
-    this.burst(PLAYER_X + 16, this.player.h + 60, 14, fur, 30);
+    this.burst(this.playerX + 16, this.player.h + 60, 14, fur, 30);
     if (this.lives <= 0) {
       this.kill(a);
       return;
     }
-    this.popup(PLAYER_X + 70, 150, `${this.lives} LEFT`, "#f0a020");
+    this.popup(this.playerX + 70, 150, `${this.lives} LEFT`, "#f0a020");
     this.audio.hit();
     this.emit(true);
   }
@@ -820,7 +844,7 @@ export class WookiGame {
     this.gunCd = 0.26;
     this.gunFlash = 0.1;
     slot.active = true;
-    slot.x = PLAYER_X + 70;
+    slot.x = this.playerX + 70;
     slot.y = 78;
     slot.life = 0.85;
     this.audio.ray();
@@ -948,8 +972,8 @@ export class WookiGame {
     this.audio.mood("dead");
     a.flash = 1;
     const fur = a.kind === "wooki" ? "#c47a45" : "#f4ead8";
-    this.burst(PLAYER_X + 20, this.player.h + 70, 24, fur, 40);
-    this.burst(PLAYER_X, this.player.h + 50, 10, "#d6ff3c", -20);
+    this.burst(this.playerX + 20, this.player.h + 70, 24, fur, 40);
+    this.burst(this.playerX, this.player.h + 50, 10, "#d6ff3c", -20);
     this.emit(true);
   }
 
@@ -1090,7 +1114,7 @@ export class WookiGame {
     }
     ctx.fillStyle = "rgba(4,17,12,0.55)";
     ctx.beginPath();
-    ctx.ellipse(PLAYER_X, groundY + 2, 36, 7, 0, 0, Math.PI * 2);
+    ctx.ellipse(this.playerX, groundY + 2, 36, 7, 0, 0, Math.PI * 2);
     ctx.fill();
     if (speedFor(this.level, this.combo) > 760 && this.phase === "play") {
       ctx.strokeStyle = "rgba(244,234,216,0.25)";
@@ -1167,7 +1191,7 @@ export class WookiGame {
     sy = Math.max(0.55, sy);
     const sx = 1 / sy;
     const h = this.phase === "dead" ? p.deadH : p.h;
-    const x = PLAYER_X + (this.phase === "dead" ? p.xoff : 0);
+    const x = this.playerX + (this.phase === "dead" ? p.xoff : 0);
     ctx.save();
     ctx.translate(x, groundY - h);
     if (this.phase === "dead") ctx.rotate(p.rot);
@@ -1223,7 +1247,7 @@ export class WookiGame {
     const p = this.player;
     const h = p.h;
     const y = groundY - (p.state === "slide" ? 28 : h + 96);
-    const x = PLAYER_X + (this.phase === "won" ? 0 : 0);
+    const x = this.playerX + (this.phase === "won" ? 0 : 0);
     ctx.save();
     ctx.translate(x, y);
     ctx.fillStyle = "#04110c";

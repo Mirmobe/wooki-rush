@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { HandCoins, Trophy, Volume2, VolumeX } from "lucide-react";
+import { ChevronLeft, ChevronRight, HandCoins, Trophy, Volume2, VolumeX } from "lucide-react";
 import { WORLD_W, WookiGame, type Hud } from "@/game/wooki";
 
 const JAR = "https://cash.app/$Mirmobe";
@@ -98,6 +98,7 @@ export function WookiRush() {
   const gameRef = useRef<WookiGame | null>(null);
   const [hud, setHud] = useState<Hud>(EMPTY);
   const [tipOpen, setTipOpen] = useState(false);
+  const [sideways, setSideways] = useState(false);
   const restartRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -151,12 +152,20 @@ export function WookiRush() {
       } else if (e.code === "KeyF" || e.code === "KeyJ") {
         e.preventDefault();
         game.pressShoot();
+      } else if (e.code === "ArrowLeft" || e.code === "KeyA") {
+        e.preventDefault();
+        game.pressLeft();
+      } else if (e.code === "ArrowRight" || e.code === "KeyD") {
+        e.preventDefault();
+        game.pressRight();
       }
     };
     const up = (e: KeyboardEvent) => {
       if (e.code === "Space" || e.code === "ArrowUp" || e.code === "KeyW") game.releaseJump();
       if (e.code === "ArrowDown" || e.code === "KeyS") game.releaseSlide();
       if (e.code === "KeyF" || e.code === "KeyJ") game.releaseShoot();
+      if (e.code === "ArrowLeft" || e.code === "KeyA") game.releaseLeft();
+      if (e.code === "ArrowRight" || e.code === "KeyD") game.releaseRight();
     };
     const vis = () => {
       if (document.visibilityState === "visible") game.resumeAudio();
@@ -171,6 +180,22 @@ export function WookiRush() {
       document.removeEventListener("visibilitychange", vis);
       game.audio.dispose();
       gameRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    const sync = () => setSideways(window.innerHeight > window.innerWidth);
+    sync();
+    window.addEventListener("resize", sync);
+    window.addEventListener("orientationchange", sync);
+    const lock = () => {
+      const orient = screen.orientation as ScreenOrientation & { lock?: (mode: string) => Promise<void> };
+      void orient?.lock?.("landscape")?.catch(() => {});
+    };
+    window.addEventListener("pointerdown", lock, { once: true });
+    return () => {
+      window.removeEventListener("resize", sync);
+      window.removeEventListener("orientationchange", sync);
     };
   }, []);
 
@@ -226,7 +251,7 @@ export function WookiRush() {
 
   return (
     <main
-      className="flex h-dvh flex-col bg-swamp text-bone"
+      className={`${sideways ? "sideways" : "h-dvh w-full"} flex flex-col bg-swamp text-bone`}
       data-phase={hud.phase}
       data-score={Math.floor(hud.score)}
       data-level={hud.level}
@@ -241,9 +266,9 @@ export function WookiRush() {
           aria-label="Wooki Rush playfield"
         />
 
-        <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-3 p-4">
+        <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-3 px-4 pt-5 pb-4">
           <div>
-            <p className="font-display text-6xl leading-none text-lime sm:text-7xl">
+            <p className="font-display text-5xl leading-none text-lime">
               {hud.score.toLocaleString()}
             </p>
             <p className="text-sm tracking-wide text-bone/80">
@@ -257,10 +282,15 @@ export function WookiRush() {
                 ))}
               </div>
             ) : null}
+            {playing ? (
+              <div className="mt-2 h-1.5 w-36 overflow-hidden rounded-full bg-moss/80">
+                <div className="h-full bg-lime" style={{ width: `${speedPct}%` }} />
+              </div>
+            ) : null}
           </div>
           <div className="flex items-start gap-2">
             {playing && hud.combo >= 1 ? (
-              <p key={hud.combo} className="combo-pop font-display text-5xl leading-none text-mag">
+              <p key={hud.combo} className="combo-pop font-display text-4xl leading-none text-mag">
                 x{hud.combo}
               </p>
             ) : null}
@@ -285,32 +315,26 @@ export function WookiRush() {
           </div>
         </div>
 
-        {playing ? (
-          <div className="pointer-events-none absolute inset-x-8 top-24 h-1.5 overflow-hidden rounded-full bg-moss/80">
-            <div className="h-full bg-lime" style={{ width: `${speedPct}%` }} />
-          </div>
-        ) : null}
-
         {hud.phase === "menu" || hud.phase === "loading" ? (
           <div className="absolute inset-0 flex items-center justify-center p-4">
-            <div className="card-in w-full max-w-md rounded-2xl border border-lime/30 bg-ink/85 p-6 backdrop-blur-md">
+            <div className="card-in max-h-full w-full max-w-md overflow-y-auto rounded-2xl border border-lime/30 bg-ink/85 p-5 backdrop-blur-md">
               <p className="text-xs font-medium tracking-widest text-mag">DISCO SWAMP RUN</p>
-              <h1 className="font-display text-7xl leading-none text-lime sm:text-8xl">WOOKI RUSH</h1>
-              <p className="mt-3 max-w-sm text-base leading-relaxed text-bone/90">
-                Shoot, jump, or slide. Four hits reset the board. Clear all 10 levels and the gold cup is yours. Tap the disco ball to wipe the screen.
+              <h1 className="font-display text-6xl leading-none text-lime">WOOKI RUSH</h1>
+              <p className="mt-2 max-w-sm text-sm leading-relaxed text-bone/90">
+                Turn sideways. Steer with the left pad. Jump and slide on the right. Four hits reset the board. Ten levels, then the gold cup.
               </p>
-              <div className="mt-4 grid grid-cols-3 gap-3 text-sm text-bone/80">
+              <div className="mt-3 grid grid-cols-3 gap-3 text-sm text-bone/80">
+                <p>
+                  <span className="block font-medium text-bone">Move</span>
+                  Left pad, or A D
+                </p>
                 <p>
                   <span className="block font-medium text-lime">Jump</span>
-                  Tap or space
+                  Right button or space
                 </p>
                 <p>
                   <span className="block font-medium text-amber">Slide</span>
-                  Swipe or S
-                </p>
-                <p>
-                  <span className="block font-medium text-mag">Ray</span>
-                  Button or F
+                  Right button or S
                 </p>
               </div>
               <button
@@ -391,48 +415,84 @@ export function WookiRush() {
           <p className="absolute inset-x-0 bottom-4 text-center text-sm text-mag">{hud.error}</p>
         ) : null}
         {tipOpen ? <TipJar onClose={() => setTipOpen(false)} /> : null}
-      </div>
 
-      <div className="safe-dock grid shrink-0 grid-cols-3 gap-2 p-3">
-        <button
-          type="button"
-          className="h-14 rounded-xl border border-bone/25 bg-moss font-display text-4xl tracking-wide text-bone"
-          onPointerDown={(e) => {
-            e.stopPropagation();
-            e.preventDefault();
-            gameRef.current?.pressSlide();
-          }}
-          onPointerUp={() => gameRef.current?.releaseSlide()}
-          onPointerLeave={() => gameRef.current?.releaseSlide()}
-        >
-          SLIDE
-        </button>
-        <button
-          type="button"
-          className="h-14 rounded-xl bg-mag font-display text-4xl tracking-wide text-ink"
-          onPointerDown={(e) => {
-            e.stopPropagation();
-            e.preventDefault();
-            gameRef.current?.pressShoot();
-          }}
-          onPointerUp={() => gameRef.current?.releaseShoot()}
-          onPointerLeave={() => gameRef.current?.releaseShoot()}
-        >
-          RAY
-        </button>
-        <button
-          type="button"
-          className="h-14 rounded-xl bg-lime font-display text-4xl tracking-wide text-ink"
-          onPointerDown={(e) => {
-            e.stopPropagation();
-            e.preventDefault();
-            gameRef.current?.pressJump();
-          }}
-          onPointerUp={() => gameRef.current?.releaseJump()}
-          onPointerLeave={() => gameRef.current?.releaseJump()}
-        >
-          JUMP
-        </button>
+        <div className="float-left pointer-events-auto absolute z-10 flex items-center gap-2">
+          <button
+            type="button"
+            aria-label="Move left"
+            className="flex h-16 w-16 items-center justify-center rounded-full border border-bone/30 bg-ink/75 text-bone backdrop-blur-md"
+            onPointerDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              e.currentTarget.setPointerCapture(e.pointerId);
+              gameRef.current?.pressLeft();
+            }}
+            onPointerUp={() => gameRef.current?.releaseLeft()}
+            onPointerCancel={() => gameRef.current?.releaseLeft()}
+          >
+            <ChevronLeft className="h-8 w-8" />
+          </button>
+          <button
+            type="button"
+            aria-label="Move right"
+            className="flex h-16 w-16 items-center justify-center rounded-full border border-bone/30 bg-ink/75 text-bone backdrop-blur-md"
+            onPointerDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              e.currentTarget.setPointerCapture(e.pointerId);
+              gameRef.current?.pressRight();
+            }}
+            onPointerUp={() => gameRef.current?.releaseRight()}
+            onPointerCancel={() => gameRef.current?.releaseRight()}
+          >
+            <ChevronRight className="h-8 w-8" />
+          </button>
+        </div>
+        <div className="float-right pointer-events-auto absolute z-10 flex items-center gap-2">
+          <button
+            type="button"
+            className="h-16 min-w-20 rounded-2xl border border-bone/25 bg-moss/90 px-3 font-display text-3xl tracking-wide text-bone backdrop-blur-md"
+            onPointerDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              e.currentTarget.setPointerCapture(e.pointerId);
+              gameRef.current?.pressSlide();
+            }}
+            onPointerUp={() => gameRef.current?.releaseSlide()}
+            onPointerCancel={() => gameRef.current?.releaseSlide()}
+          >
+            SLIDE
+          </button>
+          <button
+            type="button"
+            aria-label="Ray gun"
+            className="flex h-16 w-16 items-center justify-center rounded-full bg-mag font-display text-2xl text-ink"
+            onPointerDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              e.currentTarget.setPointerCapture(e.pointerId);
+              gameRef.current?.pressShoot();
+            }}
+            onPointerUp={() => gameRef.current?.releaseShoot()}
+            onPointerCancel={() => gameRef.current?.releaseShoot()}
+          >
+            RAY
+          </button>
+          <button
+            type="button"
+            className="h-16 min-w-20 rounded-2xl bg-lime px-3 font-display text-3xl tracking-wide text-ink"
+            onPointerDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              e.currentTarget.setPointerCapture(e.pointerId);
+              gameRef.current?.pressJump();
+            }}
+            onPointerUp={() => gameRef.current?.releaseJump()}
+            onPointerCancel={() => gameRef.current?.releaseJump()}
+          >
+            JUMP
+          </button>
+        </div>
       </div>
     </main>
   );

@@ -9,4 +9,6 @@ npm install
 npm run dev
 ```
 
-Jump: tap or space. Slide: swipe down or S. Ray: RAY button or F.
+Turn the phone sideways. Direction pad on the left, jump and slide on the right. Ray is the round button between them.
+
+Jump: right button or space. Slide: right button or S. Move: left pad, or A and D. Ray: button or F.
