@@ -13,9 +13,11 @@ const SLIDE_TIME = 0.5;
 const SLIDE_BUFFER = 0.16;
 const STEP = 1 / 60;
 const SAVE_KEY = "wooki-rush-v1";
+const HITS = 4;
+const LEVELS = 10;
 
 type Kind = "skunk" | "wooki" | "spore";
-type Phase = "loading" | "menu" | "play" | "dead";
+type Phase = "loading" | "menu" | "play" | "dead" | "won";
 type PState = "run" | "jump" | "slide";
 
 type Rect = { l: number; r: number; b: number; t: number };
@@ -53,6 +55,18 @@ type Popup = {
   color: string;
 };
 
+type Bolt = { active: boolean; x: number; y: number; life: number };
+
+type Ball = {
+  active: boolean;
+  x: number;
+  y: number;
+  vy: number;
+  hover: boolean;
+  hang: number;
+  spin: number;
+};
+
 export type Hud = {
   phase: Phase;
   score: number;
@@ -67,6 +81,9 @@ export type Hud = {
   musicOn: boolean;
   sfxOn: boolean;
   error: string;
+  level: number;
+  lives: number;
+  progress: number;
 };
 
 type Art = {
@@ -105,23 +122,27 @@ function vGap(a: Rect, b: Rect) {
   return 0;
 }
 
-function speedFor(meters: number, combo: number) {
-  const t = Math.min(1, meters / 820);
-  const eased = Math.pow(t, 0.82);
-  const base = 500 + 560 * eased;
-  const rush = Math.min(64, Math.max(0, combo - 1) * 7);
-  return Math.min(1140, base + rush);
+function speedFor(level: number, combo: number) {
+  const t = Math.min(1, Math.max(0, level - 1) / 9);
+  const base = 460 + 640 * Math.pow(t, 0.9);
+  const rush = Math.min(56, Math.max(0, combo - 1) * 6);
+  return Math.min(1180, base + rush);
 }
 
-function chargeFor(diff: number) {
-  return 50 + 300 * diff;
+function chargeFor(level: number) {
+  const t = Math.min(1, Math.max(0, level - 1) / 9);
+  return 36 + 300 * t;
 }
 
-function tierFor(meters: number) {
-  if (meters < 160) return "GROOVE";
-  if (meters < 400) return "RUSH";
-  if (meters < 700) return "FRENZY";
+function tierFor(level: number) {
+  if (level <= 2) return "GROOVE";
+  if (level <= 5) return "RUSH";
+  if (level <= 8) return "FRENZY";
   return "TRIP";
+}
+
+function goalFor(level: number) {
+  return 128 + (level - 1) * 24;
 }
 
 type Save = {
@@ -148,8 +169,17 @@ export class WookiGame {
   tier = "GROOVE";
   error = "";
   reduced = false;
-  /** Recording-only driver. Normal play never sets this. */
   reel = false;
+  level = 1;
+  lives = HITS;
+  private levelMeters = 0;
+  private iframes = 0;
+  private gunCd = 0;
+  private gunFlash = 0;
+  private shootHeld = false;
+  private discoT = 7;
+  private fast = false;
+  private clearFlash = 0;
   private jumpHeld = false;
   private slideLock = false;
   private hitstop = 0;
@@ -178,6 +208,8 @@ export class WookiGame {
     life: 0,
     color: "#d6ff3c",
   }));
+  private bolts: Bolt[] = Array.from({ length: 14 }, () => ({ active: false, x: 0, y: 0, life: 0 }));
+  private ball: Ball = { active: false, x: 640, y: 520, vy: 0, hover: false, hang: 0, spin: 0 };
 
   constructor() {
     this.reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -215,8 +247,8 @@ export class WookiGame {
   pressJump() {
     this.audio.unlock();
     if (this.phase === "loading") return;
-    if (this.phase === "dead") {
-      if (this.deadAge < 0.28) return;
+    if (this.phase === "dead" || this.phase === "won") {
+      if (this.phase === "dead" && this.deadAge < 0.28) return;
       this.start();
       return;
     }
@@ -238,8 +270,9 @@ export class WookiGame {
       this.start();
       return;
     }
-    if (this.phase === "dead") {
-      if (this.deadAge >= 0.28) this.start();
+    if (this.phase === "dead" || this.phase === "won") {
+      if (this.phase === "dead" && this.deadAge < 0.28) return;
+      if (this.phase === "won" || this.deadAge >= 0.28) this.start();
       return;
     }
     if (!this.slideLock) {
@@ -250,6 +283,38 @@ export class WookiGame {
 
   releaseSlide() {
     this.slideLock = false;
+  }
+
+  pressShoot() {
+    this.audio.unlock();
+    if (this.phase === "loading") return;
+    if (this.phase === "menu") {
+      this.start();
+      return;
+    }
+    if (this.phase === "dead" || this.phase === "won") {
+      if (this.phase === "won" || this.deadAge >= 0.28) this.start();
+      return;
+    }
+    this.shootHeld = true;
+    this.tryFire();
+  }
+
+  releaseShoot() {
+    this.shootHeld = false;
+  }
+
+  armFast() {
+    this.fast = true;
+  }
+
+  tapDisco(x: number, aboveGround: number) {
+    if (this.phase !== "play" || !this.ball.active) return false;
+    const dx = x - this.ball.x;
+    const dy = aboveGround - this.ball.y;
+    if (dx * dx + dy * dy > 78 * 78) return false;
+    this.popDisco();
+    return true;
   }
 
   toggleMusic() {
@@ -278,6 +343,17 @@ export class WookiGame {
     this.killer = "";
     this.newBest = false;
     this.tier = "GROOVE";
+    this.level = 1;
+    this.lives = HITS;
+    this.levelMeters = 0;
+    this.iframes = 0;
+    this.gunCd = 0;
+    this.gunFlash = 0;
+    this.shootHeld = false;
+    this.discoT = 6.5;
+    this.clearFlash = 0;
+    this.ball.active = false;
+    for (const b of this.bolts) b.active = false;
     this.hitstop = 0;
     this.trauma = 0;
     this.deadAge = 0;
@@ -322,11 +398,19 @@ export class WookiGame {
     this.drawBackdrop(ctx, viewH);
     this.drawTrees(ctx, groundY);
     this.drawActors(ctx, groundY);
+    this.drawDisco(ctx, groundY);
     this.drawGround(ctx, groundY, viewH);
     this.drawPlayer(ctx, groundY);
+    this.drawGun(ctx, groundY);
+    this.drawBolts(ctx, groundY);
     this.drawMotes(ctx, groundY);
     this.drawPops(ctx, groundY);
+    if (this.phase === "won") this.drawCup(ctx, groundY, viewH);
     if (this.bannerT > 0) this.drawBanner(ctx, viewH);
+    if (this.clearFlash > 0) {
+      ctx.fillStyle = `rgba(214,255,60,${this.clearFlash * 0.28})`;
+      ctx.fillRect(-20, -20, WORLD_W + 40, viewH + 40);
+    }
     if (!this.reduced && this.player.flash > 0.4 && this.phase === "dead") {
       ctx.fillStyle = `rgba(244,234,216,${(this.player.flash - 0.4) * 0.35})`;
       ctx.fillRect(-20, -20, WORLD_W + 40, viewH + 40);
@@ -340,8 +424,8 @@ export class WookiGame {
 
   private pilot() {
     if (!this.reel || this.phase !== "play") return;
-    const speed = speedFor(this.meters, this.combo);
-    const rel = speed + chargeFor(Math.min(1, this.meters / 820));
+    const speed = speedFor(this.level, this.combo);
+    const rel = speed + chargeFor(this.level);
     const p = this.player;
     let next: Actor | null = null;
     for (const a of this.pool) {
@@ -371,10 +455,12 @@ export class WookiGame {
         if (grounded || p.coyote > 0) p.jumpBuf = Math.max(p.jumpBuf, JUMP_BUFFER);
       }
       if (box.r < PLAYER_X - 36 || p.h > 128) this.jumpHeld = false;
+      if (eta < 0.55 && eta > 0.05) this.tryFire();
       return;
     }
 
     this.jumpHeld = false;
+    if (eta < 0.5 && eta > 0.02) this.tryFire();
     const close = box.r > PLAYER_X - 110 && box.l < PLAYER_X + rel * 0.2;
     if (close && p.state === "slide") p.slideT = Math.max(p.slideT, 0.34);
     if ((eta < 0.16 || close) && p.state !== "jump") {
@@ -416,28 +502,51 @@ export class WookiGame {
       return;
     }
 
+    if (this.phase === "won") {
+      this.ball.spin += dt;
+      this.clearFlash = Math.max(0, this.clearFlash - dt);
+      this.decayJuice(dt);
+      this.emit(false);
+      return;
+    }
+
     const playing = this.phase === "play";
-    const speed = playing ? speedFor(this.meters, this.combo) : 220;
+    const speed = playing ? speedFor(this.level, this.combo) : 220;
     this.scroll += speed * dt;
     if (playing) {
       this.meters += (speed * dt) / 46;
+      this.levelMeters += (speed * dt) / 46;
       this.score += speed * dt * 0.055;
+      this.iframes = Math.max(0, this.iframes - dt);
+      this.gunCd = Math.max(0, this.gunCd - dt);
+      this.gunFlash = Math.max(0, this.gunFlash - dt);
+      this.clearFlash = Math.max(0, this.clearFlash - dt);
+      if (this.shootHeld) this.tryFire();
       if (this.combo > 0) {
         this.comboTimer -= dt;
         if (this.comboTimer <= 0) this.combo = 0;
       }
-      const nextTier = tierFor(this.meters);
-      if (nextTier !== this.tier) {
-        this.tier = nextTier;
-        this.banner = nextTier;
-        this.bannerT = 0.9;
-        this.trauma = Math.min(1, this.trauma + (this.reduced ? 0 : 0.18));
-      }
-      this.audio.setTempo(118 + Math.min(1, this.meters / 820) * 16);
+      this.tier = tierFor(this.level);
+      this.audio.setTempo(118 + ((this.level - 1) / 9) * 18);
       this.spawn(dt, speed);
+      const goal = this.fast ? 22 : goalFor(this.level);
+      if (this.levelMeters >= goal) {
+        if (this.level >= LEVELS) {
+          this.win();
+          return;
+        }
+        this.level += 1;
+        this.levelMeters = 0;
+        this.tier = tierFor(this.level);
+        this.banner = `LEVEL ${this.level}`;
+        this.bannerT = 1.05;
+        this.audio.milestone();
+      }
     }
     this.pilot();
     this.updatePlayer(dt, playing);
+    this.moveBolts(dt);
+    this.moveDisco(dt, playing);
     this.moveActors(dt, speed, playing);
     this.decayJuice(dt);
     this.ambient(dt, speed);
@@ -536,8 +645,8 @@ export class WookiGame {
   }
 
   private spawn(dt: number, speed: number) {
-    const diff = Math.min(1, this.meters / 820);
-    this.nextSpawnX -= (speed + chargeFor(diff)) * dt;
+    const diff = Math.min(1, (this.level - 1) / 9);
+    this.nextSpawnX -= (speed + chargeFor(this.level)) * dt;
     let guard = 0;
     while (this.nextSpawnX < WORLD_W + 160 && guard < 4) {
       guard += 1;
@@ -578,12 +687,11 @@ export class WookiGame {
   }
 
   private moveActors(dt: number, speed: number, playing: boolean) {
-    const diff = Math.min(1, this.meters / 820);
+    const charge = chargeFor(this.level);
     const obstacles: Actor[] = [];
     const spores: Actor[] = [];
     for (const a of this.pool) {
       if (!a.active) continue;
-      const charge = chargeFor(diff);
       a.x -= (speed + charge) * dt;
       if (a.x < -360) {
         a.active = false;
@@ -601,8 +709,8 @@ export class WookiGame {
       }
     }
     if (obstacles.length) {
-      this.kill(obstacles[0]);
-      return;
+      this.hurt(obstacles[0]);
+      if (this.phase !== "play") return;
     }
     for (const s of spores) this.collect(s);
     if (!playing) return;
@@ -668,6 +776,155 @@ export class WookiGame {
     this.popup(a.x, a.foot + 80, `+${gain}`, "#ff2e88");
     this.audio.spore();
     this.burst(a.x, a.foot + 40, 8, "#ff2e88", 10);
+  }
+
+  private hurt(a: Actor) {
+    if (this.iframes > 0) return;
+    this.lives -= 1;
+    this.iframes = 1.25;
+    this.player.flash = 1;
+    this.hitstop = this.reduced ? 0.03 : 0.07;
+    this.trauma = this.reduced ? 0 : 0.62;
+    a.flash = 1;
+    const fur = a.kind === "wooki" ? "#c47a45" : "#f4ead8";
+    this.burst(PLAYER_X + 16, this.player.h + 60, 14, fur, 30);
+    if (this.lives <= 0) {
+      this.kill(a);
+      return;
+    }
+    this.popup(PLAYER_X + 70, 150, `${this.lives} LEFT`, "#f0a020");
+    this.audio.hit();
+    this.emit(true);
+  }
+
+  private win() {
+    this.phase = "won";
+    this.score += 2500;
+    this.banner = "GOLD CUP";
+    this.bannerT = 1.4;
+    this.runCombo = Math.max(this.runCombo, this.combo);
+    const finalScore = Math.floor(this.score);
+    this.newBest = finalScore > this.best;
+    if (this.newBest) this.best = finalScore;
+    if (this.combo > this.bestCombo) this.bestCombo = this.combo;
+    this.save();
+    this.audio.cup();
+    this.clearFlash = 1;
+    this.emit(true);
+  }
+
+  private tryFire() {
+    if (this.phase !== "play" || this.gunCd > 0) return;
+    const slot = this.bolts.find((b) => !b.active);
+    if (!slot) return;
+    this.gunCd = 0.26;
+    this.gunFlash = 0.1;
+    slot.active = true;
+    slot.x = PLAYER_X + 70;
+    slot.y = 78;
+    slot.life = 0.85;
+    this.audio.ray();
+  }
+
+  private moveBolts(dt: number) {
+    for (const b of this.bolts) {
+      if (!b.active) continue;
+      b.x += 1320 * dt;
+      b.life -= dt;
+      if (b.life <= 0 || b.x > WORLD_W + 40) {
+        b.active = false;
+        continue;
+      }
+      for (const a of this.pool) {
+        if (!a.active) continue;
+        const box = this.actorBox(a);
+        const beam = { l: b.x - 36, r: b.x + 18, b: b.y - 50, t: b.y + 46 };
+        if (!overlap(beam, box)) continue;
+        b.active = false;
+        if (a.kind === "spore") this.collect(a);
+        else this.zap(a);
+        break;
+      }
+    }
+  }
+
+  private zap(a: Actor) {
+    if (!a.active) return;
+    a.active = false;
+    this.combo += 1;
+    this.comboTimer = 2.55;
+    this.runCombo = Math.max(this.runCombo, this.combo);
+    const gain = Math.round(110 * (1 + (this.combo - 1) * 0.42));
+    this.score += gain;
+    this.popup(a.x, a.kind === "wooki" ? 220 : 120, `+${gain}`, "#d6ff3c");
+    const fur = a.kind === "wooki" ? "#c47a45" : "#f4ead8";
+    this.burst(a.x, a.kind === "wooki" ? 160 : 50, 16, fur, 80);
+    this.burst(a.x, a.kind === "wooki" ? 140 : 40, 8, "#d6ff3c", 40);
+    this.audio.ray();
+  }
+
+  private moveDisco(dt: number, playing: boolean) {
+    if (!playing) return;
+    this.discoT -= dt;
+    if (!this.ball.active && this.discoT <= 0) {
+      this.ball.active = true;
+      this.ball.x = 560 + Math.random() * 180;
+      this.ball.y = 620;
+      this.ball.vy = -40;
+      this.ball.hover = false;
+      this.ball.hang = 0;
+      this.discoT = 12 + Math.random() * 4;
+    }
+    if (!this.ball.active) return;
+    this.ball.spin += dt * 2.4;
+    if (!this.ball.hover) {
+      this.ball.vy -= 980 * dt;
+      this.ball.y += this.ball.vy * dt;
+      if (this.ball.y <= 230) {
+        this.ball.y = 230;
+        this.ball.vy = 0;
+        this.ball.hover = true;
+        this.ball.hang = 7;
+      }
+    } else {
+      this.ball.y = 230 + Math.sin(this.time * 3) * 12;
+      this.ball.hang -= dt;
+      if (this.ball.hang <= 0) this.ball.active = false;
+    }
+    if (!this.ball.active) return;
+    const pb = this.playerBox();
+    const hit =
+      this.ball.x > pb.l - 24 &&
+      this.ball.x < pb.r + 24 &&
+      this.ball.y > pb.b - 18 &&
+      this.ball.y < pb.t + 18;
+    if (hit) this.popDisco();
+  }
+
+  private popDisco() {
+    if (!this.ball.active) return;
+    let n = 0;
+    for (const a of this.pool) {
+      if (!a.active || a.kind === "spore") continue;
+      if (a.x < -60 || a.x > WORLD_W + 40) continue;
+      a.active = false;
+      const fur = a.kind === "wooki" ? "#c47a45" : "#f4ead8";
+      this.burst(a.x, a.kind === "wooki" ? 170 : 60, 18, fur, 20);
+      this.burst(a.x, 80, 8, "#ff2e88", 10);
+      n += 1;
+    }
+    this.score += 180 * Math.max(1, n);
+    this.combo += Math.max(1, n);
+    this.comboTimer = 2.55;
+    this.runCombo = Math.max(this.runCombo, this.combo);
+    this.popup(this.ball.x, this.ball.y + 40, n ? `DISCO ${n}` : "DISCO", "#ff2e88");
+    this.banner = "DISCO";
+    this.bannerT = 0.7;
+    this.clearFlash = 0.85;
+    this.trauma = this.reduced ? 0 : 0.7;
+    this.ball.active = false;
+    this.audio.discoClear();
+    this.emit(true);
   }
 
   private kill(a: Actor) {
@@ -835,7 +1092,7 @@ export class WookiGame {
     ctx.beginPath();
     ctx.ellipse(PLAYER_X, groundY + 2, 36, 7, 0, 0, Math.PI * 2);
     ctx.fill();
-    if (speedFor(this.meters, this.combo) > 760 && this.phase === "play") {
+    if (speedFor(this.level, this.combo) > 760 && this.phase === "play") {
       ctx.strokeStyle = "rgba(244,234,216,0.25)";
       ctx.lineWidth = 2;
       for (let i = 0; i < 10; i++) {
@@ -916,7 +1173,134 @@ export class WookiGame {
     if (this.phase === "dead") ctx.rotate(p.rot);
     ctx.scale(sx, sy);
     if (p.flash > 0 && !this.reduced) ctx.filter = `brightness(${1 + p.flash * 2.4})`;
+    if (this.iframes > 0 && Math.sin(this.time * 28) > 0) ctx.globalAlpha = 0.35;
     ctx.drawImage(img, -drawW / 2, -drawH, drawW, drawH);
+    ctx.restore();
+  }
+
+  private drawDisco(ctx: CanvasRenderingContext2D, groundY: number) {
+    const b = this.ball;
+    if (!b.active) return;
+    const y = groundY - b.y;
+    ctx.save();
+    ctx.translate(b.x, y);
+    ctx.rotate(b.spin);
+    const r = 34;
+    for (let i = 0; i < 8; i++) {
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.arc(0, 0, r, (i * Math.PI) / 4, ((i + 1) * Math.PI) / 4);
+      ctx.closePath();
+      ctx.fillStyle = i % 2 === 0 ? "#d6ff3c" : i % 4 === 1 ? "#ff2e88" : "#f0a020";
+      ctx.fill();
+    }
+    ctx.strokeStyle = "#f4ead8";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = "rgba(244,234,216,0.85)";
+    ctx.beginPath();
+    ctx.arc(-10, -10, 7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    ctx.strokeStyle = "rgba(244,234,216,0.45)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(b.x, 8);
+    ctx.lineTo(b.x, y - r);
+    ctx.stroke();
+    if (b.hover) {
+      ctx.fillStyle = "#d6ff3c";
+      ctx.font = "600 32px Teko, sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("TAP", b.x, y - 48);
+    }
+  }
+
+  private drawGun(ctx: CanvasRenderingContext2D, groundY: number) {
+    if (this.phase === "dead") return;
+    const p = this.player;
+    const h = p.h;
+    const y = groundY - (p.state === "slide" ? 28 : h + 96);
+    const x = PLAYER_X + (this.phase === "won" ? 0 : 0);
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.fillStyle = "#04110c";
+    ctx.fillRect(8, -8, 46, 16);
+    ctx.fillStyle = "#d6ff3c";
+    ctx.fillRect(10, -6, 34, 12);
+    ctx.fillStyle = "#ff2e88";
+    ctx.fillRect(40, -8, 16, 16);
+    if (this.gunFlash > 0) {
+      ctx.globalAlpha = this.gunFlash * 8;
+      ctx.fillStyle = "#f4ead8";
+      ctx.beginPath();
+      ctx.arc(64, 0, 10, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  private drawBolts(ctx: CanvasRenderingContext2D, groundY: number) {
+    for (const b of this.bolts) {
+      if (!b.active) continue;
+      const y = groundY - b.y;
+      ctx.save();
+      ctx.globalAlpha = 0.95;
+      ctx.strokeStyle = "#d6ff3c";
+      ctx.lineWidth = 16;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(b.x - 54, y);
+      ctx.lineTo(b.x + 22, y);
+      ctx.stroke();
+      ctx.strokeStyle = "#ff2e88";
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.moveTo(b.x - 40, y);
+      ctx.lineTo(b.x + 26, y);
+      ctx.stroke();
+      ctx.fillStyle = "#f4ead8";
+      ctx.beginPath();
+      ctx.arc(b.x + 22, y, 7, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  private drawCup(ctx: CanvasRenderingContext2D, groundY: number, viewH: number) {
+    const x = WORLD_W / 2;
+    const y = Math.min(groundY - 220, viewH * 0.42);
+    const bob = Math.sin(this.time * 2.2) * 6;
+    ctx.save();
+    ctx.translate(x, y + bob);
+    ctx.fillStyle = "rgba(240,160,32,0.25)";
+    ctx.beginPath();
+    ctx.ellipse(0, 78, 54, 14, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#f0a020";
+    ctx.fillRect(-28, 8, 56, 18);
+    ctx.fillRect(-16, 26, 32, 16);
+    ctx.beginPath();
+    ctx.moveTo(-40, -36);
+    ctx.lineTo(40, -36);
+    ctx.lineTo(28, 10);
+    ctx.lineTo(-28, 10);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = "#f4ead8";
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.arc(-40, -8, 16, Math.PI * 0.5, Math.PI * 1.5);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(40, -8, 16, Math.PI * 1.5, Math.PI * 0.5);
+    ctx.stroke();
+    ctx.fillStyle = "#d6ff3c";
+    ctx.font = "600 42px Teko, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("10", 0, -2);
     ctx.restore();
   }
 
@@ -971,12 +1355,15 @@ export class WookiGame {
       runCombo: this.runCombo,
       bestCombo: this.bestCombo,
       killer: this.killer,
-      showCard: this.phase === "dead",
+      showCard: this.phase === "dead" || this.phase === "won",
       tier: this.tier,
       newBest: this.newBest,
       musicOn: this.audio.musicOn,
       sfxOn: this.audio.sfxOn,
       error: this.error,
+      level: this.level,
+      lives: Math.max(0, this.lives),
+      progress: Math.min(1, this.levelMeters / (this.fast ? 22 : goalFor(this.level))),
     };
   }
 

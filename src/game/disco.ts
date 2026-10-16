@@ -365,4 +365,21 @@ export class Disco {
     this.tone(90, 0.32, "sawtooth", 0.16, 32);
     if (this.ctx && this.sfx) this.burstNoise(this.ctx.currentTime, 0.22, 0.2, "lowpass", 500, this.sfx);
   }
+
+  ray() {
+    this.tone(880, 0.07, "square", 0.045, 240);
+    this.tone(1560, 0.05, "sawtooth", 0.03, 360);
+  }
+
+  discoClear() {
+    this.tone(523, 0.12, "square", 0.07, 784);
+    this.tone(659, 0.18, "triangle", 0.05, 1046);
+    window.setTimeout(() => this.tone(880, 0.2, "square", 0.06, 1318), 90);
+  }
+
+  cup() {
+    this.tone(523, 0.16, "triangle", 0.08, 659);
+    window.setTimeout(() => this.tone(784, 0.2, "triangle", 0.08, 1046), 150);
+    window.setTimeout(() => this.tone(1046, 0.32, "sine", 0.07), 300);
+  }
 }

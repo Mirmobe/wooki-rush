@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { HandCoins, Volume2, VolumeX } from "lucide-react";
+import { HandCoins, Trophy, Volume2, VolumeX } from "lucide-react";
 import { WORLD_W, WookiGame, type Hud } from "@/game/wooki";
 
 const JAR = "https://cash.app/$Mirmobe";
@@ -88,6 +88,9 @@ const EMPTY: Hud = {
   musicOn: true,
   sfxOn: true,
   error: "",
+  level: 1,
+  lives: 4,
+  progress: 0,
 };
 
 export function WookiRush() {
@@ -102,6 +105,7 @@ export function WookiRush() {
     gameRef.current = game;
     game.setHud(setHud);
     if (new URLSearchParams(window.location.search).has("reel")) game.armReel();
+    if (new URLSearchParams(window.location.search).has("fast")) game.armFast();
     void game.load();
 
     const canvas = canvasRef.current;
@@ -144,11 +148,15 @@ export function WookiRush() {
       } else if (e.code === "ArrowDown" || e.code === "KeyS") {
         e.preventDefault();
         game.pressSlide();
+      } else if (e.code === "KeyF" || e.code === "KeyJ") {
+        e.preventDefault();
+        game.pressShoot();
       }
     };
     const up = (e: KeyboardEvent) => {
       if (e.code === "Space" || e.code === "ArrowUp" || e.code === "KeyW") game.releaseJump();
       if (e.code === "ArrowDown" || e.code === "KeyS") game.releaseSlide();
+      if (e.code === "KeyF" || e.code === "KeyJ") game.releaseShoot();
     };
     const vis = () => {
       if (document.visibilityState === "visible") game.resumeAudio();
@@ -172,7 +180,13 @@ export function WookiRush() {
 
   const onFieldDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const game = gameRef.current;
-    if (!game || e.button !== 0) return;
+    const canvas = canvasRef.current;
+    if (!game || !canvas || e.button !== 0) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / Math.max(1, rect.width)) * WORLD_W;
+    const scale = rect.width / WORLD_W;
+    const above = rect.height / Math.max(0.001, scale) - 58 - (e.clientY - rect.top) / Math.max(0.001, scale);
+    if (game.tapDisco(x, above)) return;
     if (e.pointerType !== "touch") {
       game.pressJump();
       return;
@@ -208,10 +222,16 @@ export function WookiRush() {
   };
 
   const playing = hud.phase === "play";
-  const speedPct = hud.tier === "GROOVE" ? 28 : hud.tier === "RUSH" ? 52 : hud.tier === "FRENZY" ? 76 : 100;
+  const speedPct = Math.round(hud.progress * 100);
 
   return (
-    <main className="flex h-dvh flex-col bg-swamp text-bone" data-phase={hud.phase} data-score={Math.floor(hud.score)}>
+    <main
+      className="flex h-dvh flex-col bg-swamp text-bone"
+      data-phase={hud.phase}
+      data-score={Math.floor(hud.score)}
+      data-level={hud.level}
+      data-lives={hud.lives}
+    >
       <div className="relative min-h-0 flex-1">
         <canvas
           ref={canvasRef}
@@ -228,8 +248,15 @@ export function WookiRush() {
             </p>
             <p className="text-sm tracking-wide text-bone/80">
               BEST {hud.best.toLocaleString()}
-              {playing ? ` · ${hud.tier}` : ""}
+              {playing ? ` · LV ${hud.level}/10` : ""}
             </p>
+            {playing ? (
+              <div className="mt-2 flex gap-1" aria-label={`${hud.lives} hits left`}>
+                {Array.from({ length: 4 }, (_, i) => (
+                  <span key={i} className={`h-2 w-5 rounded-full ${i < hud.lives ? "bg-lime" : "bg-moss"}`} />
+                ))}
+              </div>
+            ) : null}
           </div>
           <div className="flex items-start gap-2">
             {playing && hud.combo >= 1 ? (
@@ -270,17 +297,20 @@ export function WookiRush() {
               <p className="text-xs font-medium tracking-widest text-mag">DISCO SWAMP RUN</p>
               <h1 className="font-display text-7xl leading-none text-lime sm:text-8xl">WOOKI RUSH</h1>
               <p className="mt-3 max-w-sm text-base leading-relaxed text-bone/90">
-                Skunk apes and Wooki Bigfoots charge in from the side. Jump the low ones, slide the
-                tall ones, and chain every clean pass into a combo.
+                Shoot, jump, or slide. Four hits reset the board. Clear all 10 levels and the gold cup is yours. Tap the disco ball to wipe the screen.
               </p>
-              <div className="mt-4 grid grid-cols-2 gap-3 text-sm text-bone/80">
+              <div className="mt-4 grid grid-cols-3 gap-3 text-sm text-bone/80">
                 <p>
                   <span className="block font-medium text-lime">Jump</span>
-                  Tap, click, or space
+                  Tap or space
                 </p>
                 <p>
                   <span className="block font-medium text-amber">Slide</span>
-                  Swipe down, or S
+                  Swipe or S
+                </p>
+                <p>
+                  <span className="block font-medium text-mag">Ray</span>
+                  Button or F
                 </p>
               </div>
               <button
@@ -301,12 +331,38 @@ export function WookiRush() {
           </div>
         ) : null}
 
-        {hud.showCard ? (
+        {hud.showCard && hud.phase === "won" ? (
+          <div className="absolute inset-0 flex items-center justify-center p-4">
+            <div className="card-in w-full max-w-md rounded-2xl border border-amber/50 bg-ink/90 p-6 text-center backdrop-blur-md">
+              <Trophy className="mx-auto h-16 w-16 text-amber" aria-hidden />
+              <p className="mt-2 text-xs font-medium tracking-widest text-amber">LEVEL 10 CLEARED</p>
+              <h2 className="font-display text-7xl leading-none text-amber">GOLD CUP</h2>
+              <p className="mt-2 text-bone/80">The swamp is yours. Every Bigfoot and skunk ape is behind you.</p>
+              <p className="mt-4 font-display text-7xl leading-none text-lime">{hud.score.toLocaleString()}</p>
+              <div className="mt-2 flex justify-between text-sm text-bone/80">
+                <span>Combo x{hud.runCombo}</span>
+                <span>Best {hud.best.toLocaleString()}</span>
+              </div>
+              {hud.newBest ? <p className="mt-3 font-display text-3xl tracking-wide text-amber">NEW BEST</p> : null}
+              <button
+                ref={restartRef}
+                type="button"
+                className="mt-5 h-14 w-full rounded-xl bg-lime font-display text-4xl tracking-wide text-ink"
+                onClick={() => gameRef.current?.start()}
+              >
+                AGAIN
+              </button>
+              <TipButton onOpen={() => setTipOpen(true)} />
+            </div>
+          </div>
+        ) : null}
+
+        {hud.showCard && hud.phase !== "won" ? (
           <div className="absolute inset-0 flex items-center justify-center p-4">
             <div className="card-in w-full max-w-md rounded-2xl border border-mag/40 bg-ink/90 p-6 backdrop-blur-md">
               <p className="text-xs font-medium tracking-widest text-mag">CAUGHT</p>
               <h2 className="font-display text-6xl leading-none text-bone">{hud.killer}</h2>
-              <p className="mt-2 text-bone/80">came in from the side and ended the run.</p>
+              <p className="mt-2 text-bone/80">Four hits. The board resets.</p>
               <p className="mt-4 font-display text-7xl leading-none text-lime">
                 {hud.score.toLocaleString()}
               </p>
@@ -337,7 +393,7 @@ export function WookiRush() {
         {tipOpen ? <TipJar onClose={() => setTipOpen(false)} /> : null}
       </div>
 
-      <div className="safe-dock grid shrink-0 grid-cols-2 gap-3 p-3">
+      <div className="safe-dock grid shrink-0 grid-cols-3 gap-2 p-3">
         <button
           type="button"
           className="h-14 rounded-xl border border-bone/25 bg-moss font-display text-4xl tracking-wide text-bone"
@@ -350,6 +406,19 @@ export function WookiRush() {
           onPointerLeave={() => gameRef.current?.releaseSlide()}
         >
           SLIDE
+        </button>
+        <button
+          type="button"
+          className="h-14 rounded-xl bg-mag font-display text-4xl tracking-wide text-ink"
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            gameRef.current?.pressShoot();
+          }}
+          onPointerUp={() => gameRef.current?.releaseShoot()}
+          onPointerLeave={() => gameRef.current?.releaseShoot()}
+        >
+          RAY
         </button>
         <button
           type="button"
