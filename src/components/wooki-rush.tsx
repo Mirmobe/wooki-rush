@@ -1,6 +1,78 @@
 import { useEffect, useRef, useState } from "react";
-import { Volume2, VolumeX } from "lucide-react";
+import { HandCoins, Volume2, VolumeX } from "lucide-react";
 import { WORLD_W, WookiGame, type Hud } from "@/game/wooki";
+
+const JAR = "https://cash.app/$Mirmobe";
+const JAR_AMOUNTS = [1, 3, 5] as const;
+
+function TipButton({ onOpen }: { onOpen: () => void }) {
+  return (
+    <button
+      type="button"
+      className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-xl border border-amber/40 bg-moss font-display text-3xl tracking-wide text-amber"
+      onClick={(e) => {
+        e.stopPropagation();
+        onOpen();
+      }}
+    >
+      <HandCoins className="h-6 w-6" aria-hidden />
+      TIP JAR
+    </button>
+  );
+}
+
+function TipJar({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="absolute inset-0 z-20 flex items-center justify-center p-4" role="dialog" aria-labelledby="tip-jar-title">
+      <button type="button" className="absolute inset-0 bg-ink/75" aria-label="Close tip jar" onClick={onClose} />
+      <div className="card-in relative w-full max-w-md rounded-2xl border border-amber/40 bg-ink p-6">
+        <p className="text-xs font-medium tracking-widest text-amber">NATHAN · $MIRMOBE</p>
+        <h2 id="tip-jar-title" className="font-display text-6xl leading-none text-bone">
+          TIP JAR
+        </h2>
+        <p className="mt-3 text-base leading-relaxed text-bone/90">
+          Cash App opens with the amount filled in. The drop goes to Nathan’s jar. This game never holds the money.
+        </p>
+        <div className="mt-4 grid grid-cols-3 gap-3">
+          {JAR_AMOUNTS.map((amount) => (
+            <a
+              key={amount}
+              href={`${JAR}/${amount}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex h-14 items-center justify-center rounded-xl bg-lime font-display text-4xl text-ink"
+            >
+              ${amount}
+            </a>
+          ))}
+        </div>
+        <a
+          href={JAR}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-3 flex h-12 items-center justify-center rounded-xl border border-bone/25 text-sm text-bone"
+        >
+          Open jar, any amount
+        </a>
+        <a
+          href="https://x.com/Mirmobe"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-3 block text-center text-sm text-bone/70"
+        >
+          Also on X @Mirmobe
+        </a>
+        <button
+          type="button"
+          className="mt-4 h-12 w-full rounded-xl border border-bone/25 font-display text-3xl tracking-wide text-bone"
+          onClick={onClose}
+        >
+          CLOSE
+        </button>
+      </div>
+    </div>
+  );
+}
 
 const EMPTY: Hud = {
   phase: "loading",
@@ -22,6 +94,7 @@ export function WookiRush() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const gameRef = useRef<WookiGame | null>(null);
   const [hud, setHud] = useState<Hud>(EMPTY);
+  const [tipOpen, setTipOpen] = useState(false);
   const restartRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -223,6 +296,7 @@ export function WookiRush() {
                   Best {hud.best.toLocaleString()} · combo x{hud.bestCombo}
                 </p>
               ) : null}
+              <TipButton onOpen={() => setTipOpen(true)} />
             </div>
           </div>
         ) : null}
@@ -252,6 +326,7 @@ export function WookiRush() {
                 AGAIN
               </button>
               <p className="mt-3 text-center text-sm text-bone/60">Space or tap also restarts</p>
+              <TipButton onOpen={() => setTipOpen(true)} />
             </div>
           </div>
         ) : null}
@@ -259,6 +334,7 @@ export function WookiRush() {
         {hud.error ? (
           <p className="absolute inset-x-0 bottom-4 text-center text-sm text-mag">{hud.error}</p>
         ) : null}
+        {tipOpen ? <TipJar onClose={() => setTipOpen(false)} /> : null}
       </div>
 
       <div className="safe-dock grid shrink-0 grid-cols-2 gap-3 p-3">
