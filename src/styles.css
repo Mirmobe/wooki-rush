@@ -1,0 +1,74 @@
+@import "tailwindcss";
+
+@theme {
+  --color-swamp: #07140f;
+  --color-moss: #143024;
+  --color-ink: #04110c;
+  --color-bone: #f4ead8;
+  --color-lime: #d6ff3c;
+  --color-mag: #ff2e88;
+  --color-amber: #f0a020;
+  --font-display: "Teko", "Arial Narrow", sans-serif;
+  --font-sans: "Outfit", system-ui, sans-serif;
+  --radius: 1rem;
+}
+
+@layer base {
+  html,
+  body {
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+    background: var(--color-swamp);
+    color: var(--color-bone);
+    font-family: var(--font-sans);
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  #root {
+    height: 100%;
+  }
+}
+
+@keyframes card-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.card-in {
+  animation: card-in 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes combo-pop {
+  from {
+    transform: scale(0.86);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+
+.combo-pop {
+  animation: combo-pop 160ms cubic-bezier(0.2, 0.9, 0.2, 1);
+}
+
+.safe-dock {
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card-in,
+  .combo-pop {
+    animation: none;
+  }
+}
