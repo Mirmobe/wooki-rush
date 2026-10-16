@@ -416,7 +416,7 @@ export function WookiRush() {
         ) : null}
         {tipOpen ? <TipJar onClose={() => setTipOpen(false)} /> : null}
 
-        <div className="float-left pointer-events-auto absolute z-10 flex items-center gap-2">
+        <div className="float-left pointer-events-auto absolute z-10 flex items-center gap-2 opacity-50">
           <button
             type="button"
             aria-label="Move left"
@@ -448,7 +448,7 @@ export function WookiRush() {
             <ChevronRight className="h-8 w-8" />
           </button>
         </div>
-        <div className="float-right pointer-events-auto absolute z-10 flex items-center gap-2">
+        <div className="float-right pointer-events-auto absolute z-10 flex items-center gap-2 opacity-50">
           <button
             type="button"
             className="h-16 min-w-20 rounded-2xl border border-bone/25 bg-moss/90 px-3 font-display text-3xl tracking-wide text-bone backdrop-blur-md"

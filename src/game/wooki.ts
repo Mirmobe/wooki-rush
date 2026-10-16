@@ -3,6 +3,9 @@ import { Disco } from "@/game/disco";
 
 export const WORLD_W = 960;
 const HOME_X = 236;
+const TALL = 1.16;
+const BALL_R = 52;
+const BALL_TAP = 132;
 const GRAVITY = 3600;
 const JUMP_V = 1140;
 const JUMP_CUT = 640;
@@ -183,6 +186,7 @@ export class WookiGame {
   private discoT = 7;
   private fast = false;
   private clearFlash = 0;
+  private viewH = 520;
   private jumpHeld = false;
   private slideLock = false;
   private hitstop = 0;
@@ -331,7 +335,7 @@ export class WookiGame {
     if (this.phase !== "play" || !this.ball.active) return false;
     const dx = x - this.ball.x;
     const dy = aboveGround - this.ball.y;
-    if (dx * dx + dy * dy > 78 * 78) return false;
+    if (dx * dx + dy * dy > BALL_TAP * BALL_TAP) return false;
     this.popDisco();
     return true;
   }
@@ -404,6 +408,7 @@ export class WookiGame {
   }
 
   draw(ctx: CanvasRenderingContext2D, viewH: number) {
+    this.viewH = viewH;
     const groundY = viewH - 58;
     ctx.clearRect(0, 0, WORLD_W, viewH);
     ctx.fillStyle = "#07140f";
@@ -892,26 +897,27 @@ export class WookiGame {
     this.discoT -= dt;
     if (!this.ball.active && this.discoT <= 0) {
       this.ball.active = true;
-      this.ball.x = 560 + Math.random() * 180;
-      this.ball.y = 620;
-      this.ball.vy = -40;
+      this.ball.x = 520 + Math.random() * 220;
+      this.ball.y = this.viewH + 40;
+      this.ball.vy = -20;
       this.ball.hover = false;
       this.ball.hang = 0;
       this.discoT = 12 + Math.random() * 4;
     }
     if (!this.ball.active) return;
     this.ball.spin += dt * 2.4;
+    const hang = Math.max(140, this.viewH * 0.5 - 58);
     if (!this.ball.hover) {
       this.ball.vy -= 980 * dt;
       this.ball.y += this.ball.vy * dt;
-      if (this.ball.y <= 230) {
-        this.ball.y = 230;
+      if (this.ball.y <= hang) {
+        this.ball.y = hang;
         this.ball.vy = 0;
         this.ball.hover = true;
         this.ball.hang = 7;
       }
     } else {
-      this.ball.y = 230 + Math.sin(this.time * 3) * 12;
+      this.ball.y = hang + Math.abs(Math.sin(this.time * 3)) * 10;
       this.ball.hang -= dt;
       if (this.ball.hang <= 0) this.ball.active = false;
     }
@@ -1048,8 +1054,8 @@ export class WookiGame {
   private drawBackdrop(ctx: CanvasRenderingContext2D, viewH: number) {
     const img = this.art?.backdrop;
     if (!img) return;
-    const dh = Math.max(viewH, 540);
-    const dw = dh * (img.width / img.height);
+    const dh = Math.max(viewH, 540) * TALL;
+    const dw = (dh / TALL) * (img.width / img.height);
     const span = Math.max(dw, WORLD_W);
     const scroll = this.scroll * 0.12;
     const period = span * 2;
@@ -1061,9 +1067,9 @@ export class WookiGame {
       if (flip) {
         ctx.translate(drawX + span, 0);
         ctx.scale(-1, 1);
-        ctx.drawImage(img, 0, 0, span, dh);
+        ctx.drawImage(img, 0, viewH - dh, span, dh);
       } else {
-        ctx.drawImage(img, drawX, 0, span, dh);
+        ctx.drawImage(img, drawX, viewH - dh, span, dh);
       }
       ctx.restore();
     }
@@ -1077,8 +1083,9 @@ export class WookiGame {
   private drawTrees(ctx: CanvasRenderingContext2D, groundY: number) {
     const img = this.art?.trees;
     if (!img) return;
-    const dh = Math.min(groundY + 30, 520);
-    const dw = dh * (img.width / img.height);
+    const baseH = Math.min(groundY + 30, 520);
+    const dh = baseH * TALL;
+    const dw = baseH * (img.width / img.height);
     const scroll = this.scroll * 0.42;
     const period = dw * 2;
     let base = -((scroll % period) + period) % period;
@@ -1139,8 +1146,9 @@ export class WookiGame {
       const idx = Math.floor(this.time * (a.kind === "spore" ? 8 : 9) + a.phase) % frames.length;
       const img = frames[idx];
       if (!img) continue;
-      const drawH = a.kind === "wooki" ? 300 : a.kind === "skunk" ? 156 : 84;
-      const drawW = drawH;
+      const base = a.kind === "wooki" ? 300 : a.kind === "skunk" ? 156 : 84;
+      const drawW = base;
+      const drawH = base * TALL;
       const foot = a.kind === "wooki" ? 96 : a.kind === "spore" ? a.foot : 0;
       const bob = Math.sin(this.time * 8 + a.phase) * (a.kind === "spore" ? 3 : 2);
       ctx.save();
@@ -1156,7 +1164,7 @@ export class WookiGame {
         ctx.fillStyle = a.hint === "JUMP" ? "#d6ff3c" : "#f0a020";
         ctx.font = "600 36px Teko, sans-serif";
         ctx.textAlign = "center";
-        ctx.fillText(a.hint, a.x, groundY - (a.kind === "wooki" ? 330 : 170));
+        ctx.fillText(a.hint, a.x, groundY - (a.kind === "wooki" ? 330 : 170) * TALL);
         ctx.restore();
       }
     }
@@ -1183,8 +1191,8 @@ export class WookiGame {
     }
     const img = frames[idx] ?? frames[0];
     if (!img) return;
-    const drawH = 206;
-    const drawW = drawH;
+    const drawW = 206;
+    const drawH = 206 * TALL;
     let sy = p.squash;
     if (p.state === "jump") sy *= p.stretch;
     if (p.land > 0 && p.state === "run") sy *= 1 - 0.18 * Math.sin(p.land * Math.PI);
@@ -1209,7 +1217,7 @@ export class WookiGame {
     ctx.save();
     ctx.translate(b.x, y);
     ctx.rotate(b.spin);
-    const r = 34;
+    const r = BALL_R;
     for (let i = 0; i < 8; i++) {
       ctx.beginPath();
       ctx.moveTo(0, 0);
@@ -1238,7 +1246,7 @@ export class WookiGame {
       ctx.fillStyle = "#d6ff3c";
       ctx.font = "600 32px Teko, sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText("TAP", b.x, y - 48);
+      ctx.fillText("TAP", b.x, y - r - 16);
     }
   }
 
@@ -1246,7 +1254,7 @@ export class WookiGame {
     if (this.phase === "dead") return;
     const p = this.player;
     const h = p.h;
-    const y = groundY - (p.state === "slide" ? 28 : h + 96);
+    const y = groundY - (p.state === "slide" ? 28 : h + 110);
     const x = this.playerX + (this.phase === "won" ? 0 : 0);
     ctx.save();
     ctx.translate(x, y);
