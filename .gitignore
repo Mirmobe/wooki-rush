@@ -19,3 +19,5 @@ scripts/reel-short.mjs
 .vercel/
 .node_modules.lock
 AGENTS.md
+.vercel
+.env*

@@ -178,6 +178,7 @@ export function WookiRush() {
       window.removeEventListener("keydown", down);
       window.removeEventListener("keyup", up);
       document.removeEventListener("visibilitychange", vis);
+      game.disposeGamepad();
       game.audio.dispose();
       gameRef.current = null;
     };

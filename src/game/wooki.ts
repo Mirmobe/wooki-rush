@@ -189,6 +189,9 @@ export class WookiGame {
   private viewH = 520;
   private jumpHeld = false;
   private slideLock = false;
+  private gamepadIndex: number | null = null;
+  private prevButtons: boolean[] = [];
+  private gamepadCleanup: (() => void) | null = null;
   private hitstop = 0;
   private trauma = 0;
   private deadAge = 0;
@@ -223,12 +226,67 @@ export class WookiGame {
     this.loadSave();
   }
 
+  setupGamepad() {
+    if (this.gamepadCleanup) return;
+    const connected = (event: GamepadEvent) => {
+      this.gamepadIndex = event.gamepad.index;
+      this.prevButtons = [];
+      console.log("Xbox connected:", event.gamepad.id);
+    };
+    const disconnected = (event: GamepadEvent) => {
+      if (this.gamepadIndex === event.gamepad.index) {
+        this.gamepadIndex = null;
+        this.prevButtons = [];
+      }
+    };
+
+    window.addEventListener("gamepadconnected", connected);
+    window.addEventListener("gamepaddisconnected", disconnected);
+    this.gamepadCleanup = () => {
+      window.removeEventListener("gamepadconnected", connected);
+      window.removeEventListener("gamepaddisconnected", disconnected);
+    };
+  }
+
+  disposeGamepad() {
+    this.gamepadCleanup?.();
+    this.gamepadCleanup = null;
+  }
+
+  private pollGamepad() {
+    if (this.gamepadIndex === null) return;
+    const gamepad = navigator.getGamepads()[this.gamepadIndex];
+    if (!gamepad) return;
+
+    const buttons = gamepad.buttons;
+    const jumpPressed = !!buttons[0]?.pressed;
+    const slidePressed = !!buttons[1]?.pressed;
+    const shootPressed = !!buttons[2]?.pressed;
+
+    if (jumpPressed && !this.prevButtons[0]) this.pressJump();
+    if (!jumpPressed && this.prevButtons[0]) this.releaseJump();
+    if (slidePressed && !this.prevButtons[1]) this.pressSlide();
+    if (!slidePressed && this.prevButtons[1]) this.releaseSlide();
+    if (shootPressed && !this.prevButtons[2]) this.pressShoot();
+    if (!shootPressed && this.prevButtons[2]) this.releaseShoot();
+
+    const left = (gamepad.axes[0] ?? 0) < -0.3 || !!buttons[14]?.pressed;
+    const right = (gamepad.axes[0] ?? 0) > 0.3 || !!buttons[15]?.pressed;
+    if (left && !this.moveLeft) this.pressLeft();
+    if (!left && this.moveLeft) this.releaseLeft();
+    if (right && !this.moveRight) this.pressRight();
+    if (!right && this.moveRight) this.releaseRight();
+
+    this.prevButtons = buttons.map((button) => !!button.pressed);
+  }
+
   setHud(fn: (hud: Hud) => void) {
     this.onHud = fn;
     this.emit(true);
   }
 
   async load() {
+    this.setupGamepad();
     try {
       const num = async (base: string, names: string[]) =>
         Promise.all(names.map((n) => loadImage(asset(`${base}/${n}.png`))));
@@ -396,6 +454,7 @@ export class WookiGame {
   }
 
   frame(dt: number) {
+    this.pollGamepad();
     if (this.phase === "loading") return;
     const capped = Math.min(0.05, dt);
     this.acc += capped;
